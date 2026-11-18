@@ -3,12 +3,17 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source infra/config.env
-source "$STATE_FILE"
+[[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
+: "${PUBLIC_IP:?PUBLIC_IP 가 필요하다 (state 파일 또는 환경변수)}"
+# AWS 자격 증명이 있으면 AWS 리소스 점검, SSH 키가 있으면 인스턴스 내부 점검을 수행한다.
+HAS_AWS=0; aws sts get-caller-identity >/dev/null 2>&1 && HAS_AWS=1
+HAS_KEY=0; [[ -f "$KEY_PATH" ]] && HAS_KEY=1
 export AWS_DEFAULT_REGION="$REGION"
 SSH="ssh -i $KEY_PATH -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ec2-user@$PUBLIC_IP"
 fail=0
 check() { local name=$1; shift; if "$@"; then echo "PASS  $name"; else echo "FAIL  $name"; fail=1; fi; }
 
+if [[ $HAS_AWS == 1 ]]; then
 echo "== Route Table =="
 aws ec2 describe-route-tables --route-table-ids "$RT_ID" \
   --query 'RouteTables[0].Routes[].[DestinationCidrBlock,GatewayId,State]' --output table
@@ -25,16 +30,21 @@ SSH_SRC=$(aws ec2 describe-security-groups --group-ids "$SG_ID" \
   --query "SecurityGroups[0].IpPermissions[?FromPort==\`22\`].IpRanges[].CidrIp" --output text)
 check "SSH 소스가 /32 단일 IP ($SSH_SRC)" bash -c "[[ '$SSH_SRC' == */32 && '$SSH_SRC' != 0.0.0.0* ]]"
 
+else echo "(AWS 자격 증명 없음: 라우팅/SG 점검 건너뜀)"; fi
+
 echo "== 외부 접속 (B: /health, A: /) =="
 curl -sS -i --max-time 10 "http://$PUBLIC_IP/health"
 check "외부 GET /health = 200 OK" bash -c "[[ \$(curl -s --max-time 10 http://$PUBLIC_IP/health) == OK ]]"
 check "외부 GET / = 200" test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://$PUBLIC_IP/")" = 200
 
+if [[ $HAS_KEY == 1 ]]; then
 echo "== 인스턴스 내부 (SSH) =="
 check "SSH 접속" $SSH true
 check "nginx active" $SSH systemctl is-active --quiet nginx
 check "curl http://localhost = 200" test "$($SSH "curl -s -o /dev/null -w '%{http_code}' http://localhost")" = 200
 check "아웃바운드 curl https://example.com" $SSH "curl -fsS -o /dev/null --max-time 10 https://example.com"
+
+else echo "(SSH 키 없음: 인스턴스 내부 점검 건너뜀)"; fi
 
 echo
 [[ $fail == 0 ]] && echo "모든 검증 통과" || { echo "실패 항목이 있다 (docs/troubleshooting.md 참고)"; exit 1; }

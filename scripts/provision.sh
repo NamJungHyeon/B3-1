@@ -19,7 +19,7 @@ CALLER=$(aws sts get-caller-identity --query Arn --output text)
 echo "  $CALLER"
 [[ "$CALLER" == *":root" ]] && { echo "루트 계정으로 실행하지 마라." >&2; exit 1; }
 
-MY_IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
+MY_IP=${SSH_IP:-$(curl -4 -fsS https://checkip.amazonaws.com | tr -d '[:space:]')}
 echo "  SSH 허용 IP: $MY_IP/32"
 
 echo "[1] VPC"
@@ -64,14 +64,20 @@ aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --ip-permissions \
   "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$MY_IP/32,Description=SSH-my-ip}]" >/dev/null
 
 echo "[6] Key Pair"
-if [[ -f "$KEY_PATH" ]]; then
-  echo "  $KEY_PATH 이 이미 있다. 덮어쓰지 않으려면 지우거나 KEY_PATH를 바꿔라." >&2; exit 1
+if [[ -n "${PUBLIC_KEY_FILE:-}" ]]; then
+  # 개인키는 로컬에만 두고 공개키만 등록
+  aws ec2 import-key-pair --key-name "$KEY_NAME" --public-key-material "fileb://$PUBLIC_KEY_FILE" \
+    --tag-specifications "$(tags key-pair $KEY_NAME)" >/dev/null
+else
+  if [[ -f "$KEY_PATH" ]]; then
+    echo "  $KEY_PATH 이 이미 있다. 덮어쓰지 않으려면 지우거나 KEY_PATH를 바꿔라." >&2; exit 1
+  fi
+  mkdir -p "$(dirname "$KEY_PATH")"
+  aws ec2 create-key-pair --key-name "$KEY_NAME" --key-type ed25519 \
+    --tag-specifications "$(tags key-pair $KEY_NAME)" \
+    --query KeyMaterial --output text > "$KEY_PATH"
+  chmod 400 "$KEY_PATH"
 fi
-mkdir -p "$(dirname "$KEY_PATH")"
-aws ec2 create-key-pair --key-name "$KEY_NAME" --key-type ed25519 \
-  --tag-specifications "$(tags key-pair $KEY_NAME)" \
-  --query KeyMaterial --output text > "$KEY_PATH"
-chmod 400 "$KEY_PATH"
 save KEY_NAME "$KEY_NAME"
 
 echo "[7] EC2 ($INSTANCE_TYPE, Amazon Linux 2023, gp3 ${VOLUME_SIZE_GB}GiB)"
