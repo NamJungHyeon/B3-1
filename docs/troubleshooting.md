@@ -1,8 +1,8 @@
 # B3-1 트러블슈팅
 
-서울 리전 `ap-northeast-2`의 배포·검증 로그를 근거로 작성했다. 사례 2는 SG를 의도적으로 변경해 재현하고 복구한 실제 기록이다. 사례 1·3은 재현하지 않은 예상 장애 시나리오이며 실제 장애로 주장하지 않는다. 사례 3에는 별도의 정상적인 최소권한 거부 시험을 구분해 수록했다. 리소스는 이후 정리되었으므로 아래 명령을 과거 ID로 다시 실행하지 않는다.
+서울 리전 `ap-northeast-2`의 배포·검증 로그를 근거로 작성했다. 사례 2는 최초 v1 배포에서 SG를 의도적으로 변경해 복구한 기록이고, 사례 3은 태그 정책 v2 재배포에서 실제 겪은 공개키 파일 소실 및 부재 키페어의 권한 거부 기록이다. 사례 1만 재현하지 않은 예상 시나리오다. 리소스는 이후 정리되었으므로 아래 명령을 과거 ID로 다시 실행하지 않는다.
 
-검증 대상: EC2 `i-0d3a2ed22d4d891b1`, 당시 퍼블릭 IP `3.35.173.185`, SG `sg-0b9bcafca08337847`, VPC `vpc-017b387de9ebebe39`. 생성·SG 변경은 CloudShell의 `b3-1-operator`, 접속 시험은 공인 IP `121.135.181.35`인 로컬 Mac에서 수행했다. 일부 CloudShell 파일은 머리말에 표시된 터미널 원문 전사본이다.
+사례 1·2의 최초 v1 검증 대상: EC2 `i-0d3a2ed22d4d891b1`, 당시 퍼블릭 IP `3.35.173.185`, SG `sg-0b9bcafca08337847`, VPC `vpc-017b387de9ebebe39`. 생성·SG 변경은 CloudShell의 `b3-1-operator`, 접속 시험은 공인 IP `121.135.181.35`인 로컬 Mac에서 수행했다. 일부 CloudShell 파일은 머리말에 표시된 터미널 원문 전사본이다.
 
 ## 사례 1 — 외부 HTTP 타임아웃: 재현하지 않은 예상 시나리오
 
@@ -156,49 +156,88 @@ https://example.com -> 200
 
 SSH 전에 현재 공인 IPv4와 SG의 `/32`를 대조한다. VPN·네트워크 변경 시 예전 소스 규칙을 제거하고 새 주소 하나만 허용한다. CloudShell에서 생성할 때는 실행 환경의 IP 대신 접속할 Mac의 IP를 `SSH_IP`로 전달한다. 파이프를 사용한 진단에서는 `pipefail` 또는 원래 명령의 종료 코드를 별도로 보관해 `tail`의 성공을 SSH 성공으로 오인하지 않는다.
 
-## 사례 3 — IAM UnauthorizedOperation: 재현하지 않은 예상 시나리오
+## 사례 3 — 실제 기록: 공개키 소실 후 부재 키페어 DeleteKeyPair의 UnauthorizedOperation
 
 ### 증상
 
-미션에 필요한 API가 UnauthorizedOperation으로 실패하는 상황을 가정한다. 이번 기록에는 필수 미션 API의 누락 권한 장애나 encoded 오류의 디코딩 결과가 없다.
+태그 조건 정책 v2 적용 후 재배포 1차 시도에서 `[6] Key Pair` 단계가 ParamValidation으로 중단됐다. CloudShell 세션 재시작으로 `/tmp/b3-1-key.pub`가 사라져 공개키를 읽지 못했으며, 이때 키페어 import는 실행되지 않았다. [logs/tagpolicy-run.log](../logs/tagpolicy-run.log) 2절 원문:
+
+```text
+aws: [ERROR]: An error occurred (ParamValidation): Error parsing parameter '--public-key-material': Unable to load paramfile fileb:///tmp/b3-1-key.pub: [Errno 2] No such file or directory: '/tmp/b3-1-key.pub'
+```
+
+남은 VPC·서브넷·IGW·RT·SG는 cleanup으로 정리됐지만, 생성되지 않은 키페어를 DeleteKeyPair로 삭제하려 할 때 NotFound 대신 UnauthorizedOperation이 나왔다. 같은 로그 3절 원문:
+
+```text
+aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DeleteKeyPair operation: You are not authorized to perform this operation. User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: ec2:DeleteKeyPair on resource: arn:aws:ec2:ap-northeast-2:508473919970:*/* because no identity-based policy allows the ec2:DeleteKeyPair action. Encoded authorization failure message: …
+```
+
+로그의 `…`는 제공된 전사본의 생략 표시다. encoded 메시지 전체를 보관하거나 디코딩한 결과는 없으며 이를 만들어 넣지 않았다.
 
 ### 가설
 
-실제 호출 주체·리전 오류, 누락된 액션, explicit deny, permissions boundary나 조직 SCP를 구분한다.
+처음에는 DeleteKeyPair 액션이 정책에서 빠졌는지, 또는 대상 키페어가 없어 ResourceTag 조건을 평가할 수 없는지 구분했다. 현재 [정책 원문](../infra/iam-policy.json)의 `UseAndDeleteOnlyProjectTaggedResources`에는 DeleteKeyPair가 있고, `ec2:ResourceTag/Project=B3-1` 조건이 붙어 있다. 오류에 평가 대상이 구체적인 key-pair ARN 대신 `arn:aws:ec2:ap-northeast-2:508473919970:*/*`로 나타난 점과 실제 생성 단계를 함께 확인했다.
+
+기록의 해석은 “대상 키페어가 부재해 Project 태그 조건을 충족하지 못했다”다. 디코딩으로 내부 정책 평가를 직접 관찰한 결과라고 주장하지 않고, 리소스 부재와 동일 정책하의 정상 삭제 비교를 근거로 판단했다.
 
 ### 검증
 
-```bash
-aws sts get-caller-identity --region ap-northeast-2
-aws configure list
-# encoded 메시지가 실제 반환된 경우에만 실행하는 진단 예시
-aws sts decode-authorization-message --region ap-northeast-2 \
-  --encoded-message '<ENCODED_AUTHORIZATION_MESSAGE>' \
-  --query DecodedMessage --output text
-```
+[재배포 로그](../logs/tagpolicy-run.log) 2~6절을 순서대로 대조했다.
 
-실제 수행한 것은 미션과 무관한 S3/RDS/IAM 호출의 거부 시험이다. [logs/iam-least-privilege.log](../logs/iam-least-privilege.log)에는 다음 원문이 있다.
+| 비교 항목 | 실제 근거 |
+| --- | --- |
+| 1차 생성 중단 지점 | 공개키 파일 로드 단계에서 ParamValidation; 키 import와 EC2 생성 이전에 중단 |
+| 1차 cleanup 후 상태 | EC2/EBS/EIP/IGW/VPC/NAT/KeyPair의 Project=B3-1 잔여 목록 모두 빈 값 |
+| 정책의 액션 | DeleteKeyPair가 ResourceTag 조건 Statement에 실제 포함됨 |
+| 같은 정책으로 재배포 | 공개키를 홈으로 옮긴 뒤 전 단계 성공, 키페어 `b3-1-key` 생성 |
+| 존재하는 키페어의 삭제 비교 | 2차 cleanup에서 태그 있는 키페어 DeleteKeyPair가 Return true, KeyPairId 반환 |
+
+2차 cleanup의 원문:
 
 ```text
-aws: [ERROR]: An error occurred (AccessDenied) when calling the ListBuckets operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: s3:ListAllMyBuckets because no identity-based policy allows the s3:ListAllMyBuckets action
-aws: [ERROR]: An error occurred (AccessDenied) when calling the DescribeDBInstances operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: rds:DescribeDBInstances on resource: arn:aws:rds:ap-northeast-2:508473919970:db:* because no identity-based policy allows the rds:DescribeDBInstances action
-aws: [ERROR]: An error occurred (AccessDenied) when calling the ListUsers operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: iam:ListUsers on resource: arn:aws:iam::508473919970:user/ because no identity-based policy allows the iam:ListUsers action. (이하 authorization-details 링크 생략)
++ aws ec2 delete-key-pair --key-name b3-1-key                          -> "Return": true, "KeyPairId": "key-0331c34eb129cab79"
+```
+
+진단에 쓰는 조회 명령은 다음과 같다. 아래는 방법 설명이며 별도 출력 원문이 있는 것처럼 기록하지 않는다.
+
+```bash
+# 재실행 전 실제 공개키 파일 유무부터 확인
+ls -l "$HOME/b3-1-key.pub"
+test -s "$HOME/b3-1-key.pub"
+aws ec2 describe-key-pairs --region ap-northeast-2 \
+  --filters Name=tag:Project,Values=B3-1 Name=key-name,Values=b3-1-key
+aws ec2 describe-vpcs --region ap-northeast-2 \
+  --filters Name=tag:Project,Values=B3-1
 ```
 
 ### 조치
 
-위 3건은 최소권한이 정상적으로 거부한 결과이므로 권한을 추가하지 않았다. 향후 필수 액션이 실패하면 호출 주체·리전·디코딩 근거를 확인하고 관리 주체가 필요한 액션과 조건만 검토한다. AdministratorAccess나 무관 서비스 권한으로 우회하지 않는다.
+정책 변경은 필요하지 않았다. 권한을 넓히는 대신 임시 `/tmp` 경로의 공개키 소실을 원인으로 처리했다. 로컬 Mac의 공개키만 CloudShell 홈 `~/b3-1-key.pub`에 다시 보관하고 `PUBLIC_KEY_FILE` 경로를 바꾸어 재배포했다. 개인키는 계속 Mac에 두었다. 아래는 성공 경로를 설명하는 동등한 명령 예시이며 원문 명령 전체의 전사라고 주장하지 않는다.
+
+```bash
+# 공개키가 홈에 복구된 것을 확인한 새 배포에서만 실행
+# 앞선 부분 생성 리소스와 상태 파일을 먼저 정리한다.
+test -s "$HOME/b3-1-key.pub"
+SSH_IP=121.135.181.35 PUBLIC_KEY_FILE="$HOME/b3-1-key.pub" bash scripts/provision.sh
+bash scripts/verify.sh
+```
+
+없는 키의 UnauthorizedOperation을 이유로 조건 없는 DeleteKeyPair나 AdministratorAccess를 추가하지 않았다. cleanup 성공 여부는 마지막 문구가 아니라 실제 잔여 조회와 존재하는 대상의 삭제 결과로 판단했다.
 
 ### 결과
 
-S3 ListBuckets, RDS DescribeDBInstances, IAM ListUsers의 거부를 확인했다. 이 시험은 해당 작업의 거부 근거이며 미션 장애 복구 또는 전체 정책의 완전한 최소권한 검증을 뜻하지 않는다.
+2차 시도는 EC2 `i-04dd8916b77900977`, 퍼블릭 IP `43.201.55.219`로 배포·검증에 성공했다. CloudShell RT·SG·외부 HTTP는 PASS이고 [Mac 원문](../logs/tagpolicy-verify-local.log)도 `/health` 200 OK, SSH, nginx active, localhost 200, 아웃바운드가 모두 PASS다. 동일한 v2 정책으로 생성된 키페어 `key-0331c34eb129cab79`를 포함해 인프라를 정리했다.
+
+2026-11-18 03:34:48 UTC의 재확인에서는 EC2 terminated, VPC NotFound, KeyPair NotFound, FireView running이었다. 루트가 운영 사용자 액세스키를 삭제하고 남은 키 0을 확인했다. 키페어가 실제 존재했던 2차에서는 DeleteKeyPair가 성공하므로, 1차 오류를 일괄적인 액션 누락으로 판단하지 않았다. [정리 스크린샷](../screenshots/tagpolicy-cleanup.jpg)과 [삭제 체크리스트](cleanup-checklist.md)에도 회차를 구분했다.
 
 ### 재발방지
 
-스크립트 API와 정책 액션·리전 조건을 함께 검토한다. 정상적인 권한 거부와 필수 권한 누락을 구분하고, IAM 관리 작업은 운영 사용자에게 부여하지 않는다.
+CloudShell 공개키는 홈 영구 저장소에 보관하고 세션 재시작 후 `test -s`로 파일을 확인한다. 실패하면 마지막으로 완료한 생성 단계와 상태 파일을 확인하고 부분 생성분을 정리한다. 태그 정책에서 삭제 권한 오류가 나면 대상의 존재·태그·정책 액션·오류의 리소스 ARN을 함께 확인한다. 원문이 없는 decode 결과를 추정해 기록하거나 권한을 즉시 확장하지 않는다.
+
+최초 v1의 S3/RDS/IAM AccessDenied 시험은 [logs/iam-least-privilege.log](../logs/iam-least-privilege.log)에 별도 보관했다. 이는 무관 서비스 작업의 정상 거부 시험이며 이번 키페어 오류의 decode 결과가 아니다.
 
 참고: [AWS CLI decode-authorization-message](https://docs.aws.amazon.com/cli/latest/reference/sts/decode-authorization-message.html), [describe-security-groups](https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-security-groups.html), [describe-route-tables](https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-route-tables.html).
 
 ## 자체 점검
 
-사례 2의 시각·IP·규칙·접속 결과와 사례 3의 정상 거부 시험은 링크된 원문에 근거한다. 사례 1·3의 예상 장애를 실제 발생으로 적지 않았고, 제공되지 않은 HTTP 장애 로그나 encoded 디코딩 결과를 만들지 않았다. SSH 시험은 의도적인 소스 불일치였으며 `tail`의 종료 코드는 성공 근거에서 제외했다.
+사례 2의 SSH 실패·복구는 v1 원문, 사례 3의 실제 공개키 소실·키페어 오류·성공 비교는 v2 원문에 근거한다. 사례 1의 예상 HTTP 장애를 실제 발생으로 적지 않았다. DryRunOperation을 실제 중지·재부팅·종료로 해석하지 않았고, SSH 파이프라인의 tail 종료 코드와 미실행 authorization decode도 성공 근거로 사용하지 않았다.

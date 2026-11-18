@@ -1,0 +1,20 @@
+(AWS 자격 증명 없음: 라우팅/SG 점검 건너뜀)
+== 외부 접속 (B: /health, A: /) ==
+HTTP/1.1 200 OK
+Server: nginx/1.30.6
+Date: Wed, 18 Nov 2026 03:33:16 GMT
+Content-Type: text/plain
+Content-Length: 3
+Connection: keep-alive
+
+OK
+PASS  외부 GET /health = 200 OK
+PASS  외부 GET / = 200
+== 인스턴스 내부 (SSH) ==
+Warning: Permanently added '43.201.55.219' (ED25519) to the list of known hosts.
+PASS  SSH 접속
+PASS  nginx active
+PASS  curl http://localhost = 200
+PASS  아웃바운드 curl https://example.com
+
+모든 검증 통과

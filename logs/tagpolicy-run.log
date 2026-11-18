@@ -1,0 +1,86 @@
+# 태그 조건 정책(B3-1-LeastPrivilege v2) 적용 후 재검증 — 2026-11-18, CloudShell(ap-northeast-2)
+# CloudShell 터미널 출력 원문 전사. '…'는 생략, '#' 줄은 설명.
+# 스크린샷: screenshots/tagpolicy-dryrun.jpg, tagpolicy-verify-compare.jpg, tagpolicy-cleanup.jpg
+
+## 0. (root) 정책 v2 적용
+a19ea88 (HEAD -> main, origin/main, origin/HEAD) IAM 정책: 생성은 Project=B3-1 태그 필수, 변경·삭제는 해당 태그 리소스로 제한
+v2 True
+b3-1-operator              # list-entities-for-policy: 이 정책이 붙은 주체는 b3-1-operator 하나
+PROFILE_READY
+
+## 1. (operator) 배포 전 dry-run — 실제 실행 없음
+arn:aws:iam::508473919970:user/b3-1-operator
+== FireView(i-0f29938e558d1e55c, 태그 Project 없음) 대상: 거부돼야 함
+terminate FireView => UnauthorizedOperation
+stop FireView => UnauthorizedOperation
+create-tags Project=B3-1 on FireView => UnauthorizedOperation
+== 태그 없는 생성: 거부돼야 함
+create-vpc (태그 없음) => UnauthorizedOperation
+== Project=B3-1 태그 생성: 허용돼야 함
+create-vpc (Project=B3-1) => DryRunOperation
+
+## 2. (operator) provision 1차 — [6] Key Pair에서 중단
+# 원인: CloudShell 세션이 재시작되며 /tmp/b3-1-key.pub 이 사라짐 (권한 문제 아님). [1]~[5]는 태그 정책 하에서 정상 생성됨.
+VPC_ID=vpc-092d0a98dbb51ae38
+…
+SG_ID=sg-0eb7e50286af58365
+[6] Key Pair
+
+aws: [ERROR]: An error occurred (ParamValidation): Error parsing parameter '--public-key-material': Unable to load paramfile fileb:///tmp/b3-1-key.pub: [Errno 2] No such file or directory: '/tmp/b3-1-key.pub'
+
+## 3. (operator) 1차 잔여분 cleanup — VPC/서브넷/IGW/RT/SG는 태그 조건으로 삭제 성공, 키페어는 존재하지 않아 거부
+aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DeleteKeyPair operation: You are not authorized to perform this operation. User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: ec2:DeleteKeyPair on resource: arn:aws:ec2:ap-northeast-2:508473919970:*/* because no identity-based policy allows the ec2:DeleteKeyPair action. Encoded authorization failure message: …
+  (실패 또는 이미 삭제됨)
+== 잔여 리소스 확인 (Project=B3-1, 모두 비어 있어야 함) ==
+EC2 (terminated 제외):
+EBS:
+EIP:
+IGW:
+VPC:
+NAT GW:
+KeyPair:
+# 해석: 키페어가 없으니 리소스 ARN이 '*/*'로만 평가되고 ec2:ResourceTag/Project 값이 없어 조건 불일치 → NotFound 대신 UnauthorizedOperation.
+
+## 4. (operator) provision 2차 — 공개키를 ~/b3-1-key.pub(홈, 영구 저장소)에 두고 재실행, 전 단계 성공
+VPC_ID=vpc-05713bf5c6a23b20e
+SUBNET_ID=subnet-0d646fc669d77d6ec
+IGW_ID=igw-064e41dcc91822d1d
+RT_ID=rtb-054ffc06245f65109
+RT_ASSOC_ID=rtbassoc-030e8465681e82542
+SG_ID=sg-04d2a1f2c07a35329
+KEY_NAME=b3-1-key
+INSTANCE_ID=i-04dd8916b77900977
+PUBLIC_IP=43.201.55.219
+
+## 5. (operator) verify + dry-run 비교
+PASS  0.0.0.0/0 -> igw-064e41dcc91822d1d
+PASS  전체 포트 0.0.0.0/0 규칙 없음
+PASS  SSH 소스가 /32 단일 IP (121.135.181.35/32)
+PASS  외부 GET /health = 200 OK
+PASS  외부 GET / = 200
+모든 검증 통과
+== dry-run: B3-1 인스턴스(i-04dd8916b77900977, Project=B3-1) vs FireView(i-0f29938e558d1e55c)
+terminate B3-1 => DryRunOperation
+terminate FireView => UnauthorizedOperation
+reboot B3-1 => DryRunOperation
+reboot FireView => UnauthorizedOperation
+
+## 6. (operator) cleanup — 태그 조건 하에서 전부 삭제 성공
++ aws ec2 terminate-instances --instance-ids i-04dd8916b77900977 --output text
+…
++ aws ec2 delete-security-group --group-id sg-04d2a1f2c07a35329        -> "Return": true
++ aws ec2 disassociate-route-table --association-id rtbassoc-030e8465681e82542
++ aws ec2 delete-route-table --route-table-id rtb-054ffc06245f65109
++ aws ec2 delete-subnet --subnet-id subnet-0d646fc669d77d6ec
++ aws ec2 detach-internet-gateway --internet-gateway-id igw-064e41dcc91822d1d --vpc-id vpc-05713bf5c6a23b20e
++ aws ec2 delete-internet-gateway --internet-gateway-id igw-064e41dcc91822d1d
++ aws ec2 delete-vpc --vpc-id vpc-05713bf5c6a23b20e
++ aws ec2 delete-key-pair --key-name b3-1-key                          -> "Return": true, "KeyPairId": "key-0331c34eb129cab79"
+== 잔여 리소스 확인 (Project=B3-1, 모두 비어 있어야 함) ==   (전 항목 빈 값)
+== 재확인 (2026-11-18 03:34:48 UTC)
+terminated
+aws: [ERROR]: An error occurred (InvalidVpcID.NotFound) when calling the DescribeVpcs operation: The vpc ID 'vpc-05713bf5c6a23b20e' does not exist
+aws: [ERROR]: An error occurred (InvalidKeyPair.NotFound) when calling the DescribeKeyPairs operation: The key pair 'b3-1-key' does not exist
+FireView: running
+(root) deleted AKIAXMY3...
+(root) remaining keys: 0

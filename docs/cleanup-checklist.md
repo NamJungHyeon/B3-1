@@ -1,6 +1,6 @@
 # B3-1 삭제 체크리스트와 실제 결과
 
-B3-1 인프라 리소스 정리 완료. 2026-11-18 00:53:11 UTC(09:53:11 KST)에 EC2 terminated, VPC NotFound, 해당 EBS 잔여 0을 재확인했다. 근거는 [자동 정리 로그](../logs/cleanup.log), [삭제 후 재확인 로그](../logs/cleanup-verify.log), [CloudShell 캡처](../screenshots/cleanup-cloudshell.jpg)다. Billing 청구서에서 11월 예상 총합계 USD 0.00을 확인했다(11절, 무료 플랜 크레딧 충당).
+B3-1 인프라는 최초 v1 배포와 태그 정책 v2 재배포 모두 정리 완료했다. 아래 1~11절은 v1 기록이고, v2 재배포분은 12절에 별도 기록했다. 최초 배포는 2026-11-18 00:53:11 UTC(09:53:11 KST)에 EC2 terminated, VPC NotFound, 해당 EBS 잔여 0을 재확인했다. 근거는 [자동 정리 로그](../logs/cleanup.log), [삭제 후 재확인 로그](../logs/cleanup-verify.log), [CloudShell 캡처](../screenshots/cleanup-cloudshell.jpg)다. Billing 청구서에서 11월 예상 총합계 USD 0.00을 확인했다(11절, 무료 플랜 크레딧 충당).
 
 체크된 항목은 아래 원문 또는 전달된 실제 수행 사실에 근거한다. 삭제 시도만으로 완료 처리하지 않았으며, 원문에 없는 사전 볼륨 ID·종료 코드·개별 단계의 정확한 시각·Billing 금액은 만들지 않았다. 리전은 `ap-northeast-2`, 식별 태그는 `Project=B3-1`, 이름·값은 `infra/config.env` 기준이다.
 
@@ -219,7 +219,7 @@ aws --profile '<IAM_ADMIN_PROFILE>' iam list-access-keys --region ap-northeast-2
 콘솔 대체 경로: IAM → 사용자 → 보안 자격 증명 → 대상 액세스키 비활성화/삭제. IAM은 글로벌이며 `--region`이 사용자를 서울로 한정하지 않는다. 액세스키는 Project 태그 필터가 없어 사용자 이름과 키 ID로 식별한다.
 완료 근거: `cleanup-verify.log`의 `deleted AKIAXMY3...`와 남은 수 0. 로컬 AWS 자격 증명 파일의 정리 여부는 별도 미기록이다.
 
-## 11. Billing Dashboard 확인 — 완료(1차)
+## 11. Billing Dashboard 확인 — 최초 v1 배포 후 기록
 
 - [x] 정리 직후 루트로 Billing → 청구서(2026년 11월)를 확인했다. 페이지 새로 고침 시각: 2026-11-18 10:15:26 KST.
 - [x] 예상 총합계 **USD 0.00**, 활성 서비스 7개(Data Transfer, Elastic Compute Cloud, Glue, Key Management Service, Relational Database Service, Simple Storage Service, Virtual Private Cloud) 모두 USD 0.00.
@@ -228,16 +228,56 @@ aws --profile '<IAM_ADMIN_PROFILE>' iam list-access-keys --region ap-northeast-2
 
 증빙: [screenshots/billing-summary.jpg](../screenshots/billing-summary.jpg)(요약·예상 총합계), [screenshots/billing-services.jpg](../screenshots/billing-services.jpg)(서비스별 금액). 과금 0 표시는 리소스 삭제의 증거가 아니며, 삭제 근거는 위 로그다.
 
+## 12. 태그 정책 v2 재배포분 정리 결과
+
+[logs/tagpolicy-run.log](../logs/tagpolicy-run.log) 2~3절은 공개키 소실로 중단된 1차 시도의 잔여 정리, 4~6절은 공개키 복구 후 성공한 2차 시도의 검증·정리 기록이다. 기존 v1 배포와도 구분한다. IAM 정책 v2는 루트로 적용했고 인프라 생성·정리는 운영 사용자 `b3-1-operator`가 수행했다.
+
+1차 시도는 `/tmp/b3-1-key.pub` 부재로 키 import 전에 중단되어 VPC `vpc-092d0a98dbb51ae38` 등의 부분 생성분을 정리했다. 없는 키페어를 삭제할 때 태그 조건을 충족하지 못해 UnauthorizedOperation이 나왔으나 Project 잔여 목록은 모두 비어 있었다. 이 사례는 [실제 IAM 트러블슈팅](troubleshooting.md)의 사례 3에 기록했다. 정책을 넓혀 해결한 사례가 아니다.
+
+홈의 `~/b3-1-key.pub`로 성공한 2차 시도의 삭제 대상과 결과:
+
+| 대상 | 실제 ID / 결과 |
+| --- | --- |
+| EC2 / 당시 퍼블릭 IP | `i-04dd8916b77900977` / `43.201.55.219`; 종료 후 terminated |
+| VPC | `vpc-05713bf5c6a23b20e`; 삭제 후 InvalidVpcID.NotFound |
+| Public Subnet | `subnet-0d646fc669d77d6ec`; 삭제 |
+| IGW | `igw-064e41dcc91822d1d`; detach + delete |
+| Route Table / 연결 | `rtb-054ffc06245f65109` / `rtbassoc-030e8465681e82542`; 연결 해제 후 삭제 |
+| Security Group | `sg-04d2a1f2c07a35329`; delete 결과 Return true |
+| KeyPair | `b3-1-key`, `key-0331c34eb129cab79`; delete 결과 Return true, 재조회 NotFound |
+
+- [x] 생성·검증 후 동일 v2 정책으로 EC2 종료와 SG·RT·서브넷·IGW·VPC·키페어 삭제를 마쳤다.
+- [x] 1차 시도와 달리 실제 존재하는 태그 키페어는 DeleteKeyPair가 성공했다.
+- [x] Project=B3-1 잔여 조회에서 EC2(terminated 제외)·EBS·EIP·IGW·VPC·NAT·KeyPair가 모두 빈 값임을 확인했다.
+- [x] 2026-11-18 03:34:48 UTC(12:34:48 KST)에 EC2 terminated, VPC NotFound, KeyPair NotFound를 재확인했다.
+- [x] 기존 타 프로젝트 FireView 인스턴스 `i-0f29938e558d1e55c`는 running을 유지했다.
+- [x] 루트가 마지막 실습 액세스키를 삭제하고 남은 키 0을 확인했다.
+- [ ] v2 재배포 이후 사용분까지 반영한 Billing 후속 확인 결과는 아직 없다. 11절 캡처는 그 이전의 v1 정리 후 기록이다.
+
+재확인 원문 발췌:
+
+```text
+== 재확인 (2026-11-18 03:34:48 UTC)
+terminated
+aws: [ERROR]: An error occurred (InvalidVpcID.NotFound) when calling the DescribeVpcs operation: The vpc ID 'vpc-05713bf5c6a23b20e' does not exist
+aws: [ERROR]: An error occurred (InvalidKeyPair.NotFound) when calling the DescribeKeyPairs operation: The key pair 'b3-1-key' does not exist
+FireView: running
+(root) deleted AKIAXMY3...
+(root) remaining keys: 0
+```
+
+동일 결과의 실제 캡처는 [screenshots/tagpolicy-cleanup.jpg](../screenshots/tagpolicy-cleanup.jpg)다. 03:34:48 UTC는 조회 시각이며 각 리소스가 정확히 그 시각에 삭제되었다고 뜻하지 않는다. `tagpolicy-run.log`는 생략 부호·설명 주석이 포함된 원문 전사본이고, 액세스키 전체 ID나 미실행 decode 결과는 기록하지 않았다. v2의 부재 키페어 오류를 무시해 성공 처리한 것이 아니라, 재배포 후 실제 태그 키페어의 정상 삭제·최종 NotFound를 별도로 확인했다.
+
 ## 최종 결과와 자체 점검
 
 | 항목 | 실제 결과 |
 | --- | --- |
 | 실행 경로 | CloudShell 자동 cleanup + 삭제 후 별도 재조회 |
-| 재확인 시각 | 2026-11-18 00:53:11 UTC / 09:53:11 KST |
-| B3-1 인프라 | EC2 terminated, EBS 0, B3-1 EIP 미할당, SG/RT/Subnet/IGW/VPC/키페어 삭제 |
+| 재확인 시각 | v1: 2026-11-18 00:53:11 UTC / 09:53:11 KST; v2: 03:34:48 UTC / 12:34:48 KST |
+| B3-1 인프라 | v1·v2 모두 EC2 terminated, Project 잔여 없음, SG/RT/Subnet/IGW/VPC/키페어 삭제 |
 | 계정의 타 프로젝트 | FireView RDS 1건과 EIP 1건 유지; B3-1 삭제 대상 아님 |
 | IAM | 실습 액세스키 삭제·남은 수 0, 사용자와 정책 유지 |
-| 미확인 사항 | Billing 다음 날 재확인(B3-1 사용분 분리 불가), 다른 리전 감사, 선택적 추가 감사·로컬 키/프로필 정리 여부 |
-| 증빙 | `logs/cleanup.log`, `logs/cleanup-verify.log`, `screenshots/cleanup-cloudshell.jpg` |
+| 미확인 사항 | v2 이후 Billing 재확인(B3-1 사용분 분리 불가), 다른 리전 감사, 선택적 추가 감사·로컬 키/프로필 정리 여부 |
+| 증빙 | v1: `logs/cleanup.log`, `logs/cleanup-verify.log`, `screenshots/cleanup-cloudshell.jpg`; v2: `logs/tagpolicy-run.log`, `screenshots/tagpolicy-cleanup.jpg` |
 
 실측 삭제·부재는 제공된 로그 범위로 한정했다. 계정 전체 EIP/RDS가 없다고 적지 않았고, 루트 사용·Billing 표시의 한계(크레딧 충당·반영 지연)·로컬 파일 상태를 숨기지 않았다. 비어 있는 잔여 목록과 ID 기준 NotFound를 함께 근거로 사용했다.
