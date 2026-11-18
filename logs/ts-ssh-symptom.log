@@ -1,0 +1,18 @@
+### 증상: SSH 시도 (2026-11-18 09:49:51 KST)
+debug1: loaded pubkey from /Users/junghyun/.ssh/b3-1-key.pem: ED25519 SHA256:ouBzKxsenH/Y/6OPb5AEM4WCO5r/8v2utx5zlas8/Vg
+debug1: identity file /Users/junghyun/.ssh/b3-1-key.pem type 2
+debug1: no identity pubkey loaded from /Users/junghyun/.ssh/b3-1-key.pem
+debug1: Connecting to 3.35.173.185 [3.35.173.185] port 22.
+debug1: connect to address 3.35.173.185 port 22: Operation timed out
+ssh: connect to host 3.35.173.185 port 22: Operation timed out
+exit=0
+
+### 비교: 같은 시각 HTTP
+HTTP 200 in 0.016120s
+
+### 가설 검증: 현재 내 공인 IP
+121.135.181.35
+
+### TCP 22 포트 직접 확인
+nc: connectx to 3.35.173.185 port 22 (tcp) failed: Operation timed out
+Connection to 3.35.173.185 port 80 [tcp/http] succeeded!

@@ -1,0 +1,8 @@
+# CloudShell(ap-northeast-2), AWS_PROFILE=b3-1-operator, 2026-11-18 — 터미널 출력 원문 전사
+arn:aws:iam::508473919970:user/b3-1-operator
+--- S3 (should be denied)
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListBuckets operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: s3:ListAllMyBuckets because no identity-based policy allows the s3:ListAllMyBuckets action
+--- RDS (should be denied)
+aws: [ERROR]: An error occurred (AccessDenied) when calling the DescribeDBInstances operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: rds:DescribeDBInstances on resource: arn:aws:rds:ap-northeast-2:508473919970:db:* because no identity-based policy allows the rds:DescribeDBInstances action
+--- IAM (should be denied)
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListUsers operation: User: arn:aws:iam::508473919970:user/b3-1-operator is not authorized to perform: iam:ListUsers on resource: arn:aws:iam::508473919970:user/ because no identity-based policy allows the iam:ListUsers action. (이하 authorization-details 링크 생략)

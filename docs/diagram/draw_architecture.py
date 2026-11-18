@@ -1,6 +1,6 @@
 """Generate docs/architecture.png. Run: python3 -m pip install Pillow; python3 docs/diagram/draw_architecture.py
 
-English labels avoid dependence on Korean fonts. No deployment data is embedded.
+English labels avoid dependence on Korean fonts. Values describe the verified deployment before cleanup.
 """
 from pathlib import Path
 import math
@@ -56,11 +56,11 @@ text(850,414,'b3-1-public-subnet  |  ap-northeast-2a',23,fill='#426e50')
 rect((1010,485,1645,835),'#fff9ed','#d79422',3)
 text(1038,507,'Security Group  b3-1-web-sg',27,bold=True)
 text(1038,550,'Inbound: TCP 80  from 0.0.0.0/0',23)
-text(1038,587,'Inbound: TCP 22  from <MY_IP>/32',23)
+text(1038,587,'Inbound: TCP 22  from 121.135.181.35/32',22)
 rect((1070,650,1585,805),'#ffffff','#d79422',2)
 text(1096,671,'EC2  |  Nginx  |  t3.micro',28,bold=True)
 text(1096,714,'Amazon Linux 2023  |  gp3 8 GiB',23)
-text(1096,752,'Auto public IPv4: <PUBLIC_IP>',23)
+text(1096,752,'Auto public IPv4: 3.35.173.185',23)
 rect((465,625,765,790),'#eef4ff','#5278b2',2)
 text(488,646,'Route Table',27,bold=True)
 text(488,688,'b3-1-public-rt',23)
@@ -85,7 +85,7 @@ arrow([(600,625),(600,505)],color='#64748b',width=3,dashed=True)
 text(467,555,'Default route',20,fill='#64748b')
 rect((55,690,345,875),'#fff4e9','#bd6926',3)
 text(80,713,'Administrator',28,bold=True)
-text(80,757,'<MY_IP>/32',25)
+text(80,757,'121.135.181.35/32',25)
 text(80,803,'SSH key: b3-1-key',22)
 arrow([(345,745),(395,745),(395,525),(540,525),(540,505)],color='#bd6926',width=5)
 arrow([(600,350),(600,325),(1670,325),(1670,870),(1320,870),(1320,805)],color='#bd6926',width=5)
@@ -94,12 +94,12 @@ text(463,914,'SSH 22 via Internet + IGW; key authentication',22,fill='#a15318',b
 rect((1090,170,1695,310),'#f5f0ff','#825ab5',2)
 text(1115,190,'IAM user  b3-1-operator (account-wide)',25,bold=True)
 text(1115,232,'Console / CLI -> AWS APIs (HTTPS 443)',23)
-text(1115,269,'Policy: B3-1-LeastPrivilege  |  no root',22)
+text(1115,269,'Policy: B3-1-LeastPrivilege',22)
 arrow([(1360,310),(1360,350)],color='#825ab5',width=4,dashed=True)
 text(465,285,'IAM authorizes AWS resource operations',22,fill='#825ab5')
 rect((55,1020,1740,1135),'#e8eef6','#c7d3e2',1)
 text(80,1040,'Blue: HTTP service traffic    Orange: SSH administration    Dashed: configuration / API management',24,bold=True)
-text(80,1084,'Design only - deployment pending. Public IP is assigned at launch; no Elastic IP, NAT Gateway, or load balancer.',23)
+text(80,1084,'Verified deployment (2026-11-18); resources removed. Evidence: logs/. Billing review pending.',23)
 # Render at final native resolution, keeping anti-aliased text and arrows.
 im.resize((W,H),Image.Resampling.LANCZOS).save(ROOT/'docs'/'architecture.png')
 print(f'{ROOT / "docs" / "architecture.png"}: {W} x {H} PNG')

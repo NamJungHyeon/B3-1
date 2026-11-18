@@ -1,0 +1,21 @@
+# CloudShell(ap-northeast-2), AWS_PROFILE=b3-1-operator
+# $ SSH_IP=121.135.181.35 PUBLIC_KEY_FILE=/tmp/b3-1-key.pub bash scripts/provision.sh — 터미널 출력 원문 전사
+[0] 호출자 확인 (루트가 아니어야 함)
+  arn:aws:iam::508473919970:user/b3-1-operator
+  SSH 허용 IP: 121.135.181.35/32
+[1] VPC
+  VPC_ID=vpc-017b387de9ebebe39
+[2] Public Subnet
+  SUBNET_ID=subnet-053424ed40ee5e872
+[3] Internet Gateway
+  IGW_ID=igw-0f2ea6a5447a030d1
+[4] Route Table (0.0.0.0/0 -> IGW)
+  RT_ID=rtb-062bb6ef39f712a4b
+  RT_ASSOC_ID=rtbassoc-0a575477549135e20
+[5] Security Group (80: 0.0.0.0/0, 22: 121.135.181.35/32)
+  SG_ID=sg-0b9bcafca08337847
+[6] Key Pair
+  KEY_NAME=b3-1-key
+[7] EC2 (t3.micro, Amazon Linux 2023, gp3 8GiB)
+  INSTANCE_ID=i-0d3a2ed22d4d891b1
+  PUBLIC_IP=3.35.173.185

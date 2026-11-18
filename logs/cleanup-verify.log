@@ -1,0 +1,19 @@
+# CloudShell(ap-northeast-2) — 원문 전사. 오른쪽 `# ...` 주석은 이해를 돕기 위해 덧붙인 설명(출력 아님). 앞 4줄은 b3-1-operator, "(root)" 이후는 루트 자격 증명
+== 삭제 후 ID 기준 재확인 (2026-11-18 00:53:11 UTC) ==
+terminated                                   # EC2 i-0d3a2ed22d4d891b1 상태
+aws: [ERROR]: An error occurred (InvalidVpcID.NotFound) when calling the DescribeVpcs operation: The vpc ID 'vpc-017b387de9ebebe39' does not exist
+0                                            # 해당 인스턴스에 붙었던 EBS 볼륨 수
+1                                            # 계정 전체 EIP 수 (아래 참고: B3-1과 무관)
+-- (root) ELB/RDS/NAT 미생성 확인
+0                                            # ELBv2
+1                                            # RDS (아래 참고: B3-1과 무관)
+0                                            # NAT Gateway(pending/available)
+-- (root) b3-1-operator 액세스 키 삭제
+deleted AKIAXMY3...
+0                                            # 남은 액세스 키 수
+
+# 계정 전체 조회에 잡힌 1건씩은 B3-1 이전부터 운영 중인 다른 프로젝트(FireView) 리소스다. 식별자·생성일(2026-08)로 확인, 삭제하지 않음.
+--- RDS
+fireview-db postgres db.t4g.micro available 2026-08-23T03:25:48.828000+00:00
+--- EIP
+54.116.76.70 eipalloc-05d02b367f7942590 eipassoc-0708437d9e851c4ba i-0f29938e558d1e55c None

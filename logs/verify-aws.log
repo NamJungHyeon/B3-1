@@ -1,0 +1,24 @@
+# CloudShell(ap-northeast-2), AWS_PROFILE=b3-1-operator, $ bash scripts/verify.sh — 원문 전사 (스크린샷: screenshots/verify-aws-cloudshell.jpg)
+== Route Table ==
+|  10.0.0.0/16 |  local                  |  active |
+|  0.0.0.0/0   |  igw-0f2ea6a5447a030d1  |  active |
+PASS  0.0.0.0/0 -> igw-0f2ea6a5447a030d1
+== Security Group ==
+|  tcp|  80 |  80 |  0.0.0.0/0          |
+|  tcp|  22 |  22 |  121.135.181.35/32  |
+PASS  전체 포트 0.0.0.0/0 규칙 없음
+PASS  SSH 소스가 /32 단일 IP (121.135.181.35/32)
+== 외부 접속 (B: /health, A: /) ==
+HTTP/1.1 200 OK
+Server: nginx/1.30.6
+Date: Wed, 18 Nov 2026 00:48:47 GMT
+Content-Type: text/plain
+Content-Length: 3
+Connection: keep-alive
+
+OK
+PASS  외부 GET /health = 200 OK
+PASS  외부 GET / = 200
+(SSH 키 없음: 인스턴스 내부 점검 건너뜀)
+
+모든 검증 통과

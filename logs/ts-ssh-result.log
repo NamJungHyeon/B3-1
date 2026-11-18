@@ -1,0 +1,16 @@
+### 결과: 조치 후 SSH (2026-11-18 09:50:28 KST)
+ip-10-0-1-105.ap-northeast-2.compute.internal
+active
+--- curl -i http://localhost
+HTTP/1.1 200 OK
+Server: nginx/1.30.6
+Date: Wed, 18 Nov 2026 00:50:29 GMT
+--- curl -i http://localhost/health
+HTTP/1.1 200 OK
+OK
+--- outbound
+https://example.com -> 200
+--- nginx access log (tail)
+121.135.181.35 - - [18/Nov/2026:00:50:01 +0000] "GET /health HTTP/1.1" 200 3 "-" "curl/8.7.1" "-"
+::1 - - [18/Nov/2026:00:50:29 +0000] "GET / HTTP/1.1" 200 171 "-" "curl/8.21.0" "-"
+::1 - - [18/Nov/2026:00:50:29 +0000] "GET /health HTTP/1.1" 200 3 "-" "curl/8.21.0" "-"
