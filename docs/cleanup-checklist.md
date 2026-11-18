@@ -1,6 +1,6 @@
 # B3-1 삭제 체크리스트와 실제 결과
 
-B3-1 인프라 리소스 정리 완료. 2026-11-18 00:53:11 UTC(09:53:11 KST)에 EC2 terminated, VPC NotFound, 해당 EBS 잔여 0을 재확인했다. 근거는 [자동 정리 로그](../logs/cleanup.log), [삭제 후 재확인 로그](../logs/cleanup-verify.log), [CloudShell 캡처](../screenshots/cleanup-cloudshell.jpg)다. Billing Dashboard 확인은 근거가 아직 없어 미완료로 남긴다.
+B3-1 인프라 리소스 정리 완료. 2026-11-18 00:53:11 UTC(09:53:11 KST)에 EC2 terminated, VPC NotFound, 해당 EBS 잔여 0을 재확인했다. 근거는 [자동 정리 로그](../logs/cleanup.log), [삭제 후 재확인 로그](../logs/cleanup-verify.log), [CloudShell 캡처](../screenshots/cleanup-cloudshell.jpg)다. Billing 청구서에서 11월 예상 총합계 USD 0.00을 확인했다(11절, 무료 플랜 크레딧 충당).
 
 체크된 항목은 아래 원문 또는 전달된 실제 수행 사실에 근거한다. 삭제 시도만으로 완료 처리하지 않았으며, 원문에 없는 사전 볼륨 ID·종료 코드·개별 단계의 정확한 시각·Billing 금액은 만들지 않았다. 리전은 `ap-northeast-2`, 식별 태그는 `Project=B3-1`, 이름·값은 `infra/config.env` 기준이다.
 
@@ -219,16 +219,14 @@ aws --profile '<IAM_ADMIN_PROFILE>' iam list-access-keys --region ap-northeast-2
 콘솔 대체 경로: IAM → 사용자 → 보안 자격 증명 → 대상 액세스키 비활성화/삭제. IAM은 글로벌이며 `--region`이 사용자를 서울로 한정하지 않는다. 액세스키는 Project 태그 필터가 없어 사용자 이름과 키 ID로 식별한다.
 완료 근거: `cleanup-verify.log`의 `deleted AKIAXMY3...`와 남은 수 0. 로컬 AWS 자격 증명 파일의 정리 여부는 별도 미기록이다.
 
-## 11. Billing Dashboard 확인 — 미완료
+## 11. Billing Dashboard 확인 — 완료(1차)
 
-- [ ] Billing Dashboard / Bills / Cost Explorer의 실제 사용 내역과 삭제 시점을 대조한다.
-- [ ] EC2·EBS·퍼블릭 IPv4·데이터 전송과 기존 타 프로젝트 RDS/EIP 비용을 구분한다.
-- [ ] 다른 리전의 잔여 리소스·사용 내역을 계정 차원에서 확인한다.
-- [ ] 요금 반영 지연을 고려한 후속 재확인 시점을 기록한다.
+- [x] 정리 직후 루트로 Billing → 청구서(2026년 11월)를 확인했다. 페이지 새로 고침 시각: 2026-11-18 10:15:26 KST.
+- [x] 예상 총합계 **USD 0.00**, 활성 서비스 7개(Data Transfer, Elastic Compute Cloud, Glue, Key Management Service, Relational Database Service, Simple Storage Service, Virtual Private Cloud) 모두 USD 0.00.
+- [x] 계정은 무료 플랜이라 사용 요금이 크레딧으로 충당되고 청구되지 않는다는 안내가 표시된다. "가장 높은 AWS 리전 지출" 항목은 Asia Pacific (Seoul) USD 25.25로 표시된다(크레딧 차감 전 사용액으로 보이며, 기존 FireView RDS/EIP 사용분이 포함된다).
+- [ ] B3-1 사용분(EC2 약 10분, gp3 8GiB, 퍼블릭 IPv4)만 따로 분리한 금액은 이 화면에서 구분되지 않는다. 사용량은 수 시간~하루 늦게 반영될 수 있으므로 다음 날 같은 화면을 다시 확인한다.
 
-Billing 권한이 있는 관리 주체가 확인해야 한다. 운영 사용자에게 Billing 권한을 추가하지 않는다. Project 태그 비용 필터는 비용 할당 태그 활성화·반영 여부를 확인한 뒤 보조로 사용한다. 과금 0이나 비용 필터의 빈 목록은 리소스 삭제 증거를 대체하지 않는다.
-
-미완료 근거란: `<BILLING_CHECKED_AT>`, `<조회 기간·서비스/리전별 실제 내역>`, `<후속 확인일>` — 후속 확인 필요. Billing 스크린샷은 아직 제공되지 않았다.
+증빙: [screenshots/billing-summary.jpg](../screenshots/billing-summary.jpg)(요약·예상 총합계), [screenshots/billing-services.jpg](../screenshots/billing-services.jpg)(서비스별 금액). 과금 0 표시는 리소스 삭제의 증거가 아니며, 삭제 근거는 위 로그다.
 
 ## 최종 결과와 자체 점검
 
@@ -239,7 +237,7 @@ Billing 권한이 있는 관리 주체가 확인해야 한다. 운영 사용자�
 | B3-1 인프라 | EC2 terminated, EBS 0, B3-1 EIP 미할당, SG/RT/Subnet/IGW/VPC/키페어 삭제 |
 | 계정의 타 프로젝트 | FireView RDS 1건과 EIP 1건 유지; B3-1 삭제 대상 아님 |
 | IAM | 실습 액세스키 삭제·남은 수 0, 사용자와 정책 유지 |
-| 미확인 사항 | Billing, 다른 리전 감사, 선택적 추가 감사·로컬 키/프로필 정리 여부 |
+| 미확인 사항 | Billing 다음 날 재확인(B3-1 사용분 분리 불가), 다른 리전 감사, 선택적 추가 감사·로컬 키/프로필 정리 여부 |
 | 증빙 | `logs/cleanup.log`, `logs/cleanup-verify.log`, `screenshots/cleanup-cloudshell.jpg` |
 
-실측 삭제·부재는 제공된 로그 범위로 한정했다. 계정 전체 EIP/RDS가 없다고 적지 않았고, 루트 사용·미확인 Billing·로컬 파일 상태를 숨기지 않았다. 비어 있는 잔여 목록과 ID 기준 NotFound를 함께 근거로 사용했다.
+실측 삭제·부재는 제공된 로그 범위로 한정했다. 계정 전체 EIP/RDS가 없다고 적지 않았고, 루트 사용·Billing 표시의 한계(크레딧 충당·반영 지연)·로컬 파일 상태를 숨기지 않았다. 비어 있는 잔여 목록과 ID 기준 NotFound를 함께 근거로 사용했다.

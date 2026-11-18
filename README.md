@@ -2,7 +2,7 @@
 
 서울 리전(ap-northeast-2)에 VPC와 퍼블릭 서브넷을 구성하고 EC2의 Nginx 웹 서비스를 배포했다. 외부 HTTP, SSH, Nginx 상태, localhost 응답과 아웃바운드 검증을 완료했으며 원문은 [logs/verify-aws.log](logs/verify-aws.log)와 [logs/verify-local.log](logs/verify-local.log)에 있다. 설정의 기준은 [infra/config.env](infra/config.env)이다.
 
-현재 상태: 배포·서비스 검증과 B3-1 인프라 정리 완료. 2026-11-18 00:53:11 UTC에 EC2 terminated, VPC NotFound와 해당 EBS 0을 재확인했다. IAM 액세스키도 삭제했다. [삭제 체크리스트](docs/cleanup-checklist.md)에 근거를 기록했으며 Billing Dashboard 확인은 미완료다. 아래 IP와 리소스 ID는 2026-11-18 검증 당시의 기록이며, 리소스 종료·삭제 후에는 접속 대상으로 사용하지 않는다.
+현재 상태: 배포·서비스 검증과 B3-1 인프라 정리 완료. 2026-11-18 00:53:11 UTC에 EC2 terminated, VPC NotFound와 해당 EBS 0을 재확인했다. IAM 액세스키도 삭제했다. [삭제 체크리스트](docs/cleanup-checklist.md)에 근거를 기록했으며, 정리 직후 Billing 청구서에서 11월 예상 총합계 USD 0.00(무료 플랜 크레딧 충당)을 확인했다. 아래 IP와 리소스 ID는 2026-11-18 검증 당시의 기록이며, 리소스 종료·삭제 후에는 접속 대상으로 사용하지 않는다.
 
 ## 디렉터리 구조
 
@@ -32,6 +32,8 @@
 │   └── ts-ssh-{break,symptom,fix,result}.log
 ├── screenshots/
 │   ├── verify-aws-cloudshell.jpg
+│   ├── billing-summary.jpg
+│   ├── billing-services.jpg
 │   ├── cleanup-cloudshell.jpg
 │   ├── browser-root.jpg
 │   └── browser-health.jpg
@@ -79,7 +81,7 @@ SSH도 인터넷·IGW를 거쳐 같은 EC2의 TCP 22로 도달한다. 검증 당
 
 IAM 허용은 SG 포트를 열지 않으며 SG 허용은 API 권한을 부여하지 않는다. [정책 원문](infra/iam-policy.json)은 서울 리전의 EC2 조회·생명주기 작업, AMI용 제한된 SSM 파라미터 읽기, STS 호출 주체 확인·권한 오류 디코딩을 허용한다. 실행 타입 제한에는 `t2.micro`와 `t3.micro`가 포함되지만 실제 배포는 `t3.micro`다. 일부 EC2 액션의 Resource가 `*`, 조회가 `ec2:Describe*`이므로 미션 액션·리전 중심 제한이며 특정 VPC나 Project 태그만 강제하는 리소스별 제한은 아니다.
 
-[최소권한 검증 로그](logs/iam-least-privilege.log)에서는 `s3:ListAllMyBuckets`, `rds:DescribeDBInstances`, `iam:ListUsers`가 모두 AccessDenied로 거부됐다. 이는 해당 무관 서비스 작업의 거부를 확인한 근거이며 전체 IAM 권한 평가를 대체하지 않는다. 운영 사용자에게 S3/RDS/IAM 관리·Billing 권한을 추가하지 않았다. 실제 루트 사용 범위는 초기 IAM 사용자·정책 생성과 정리 후 ELB/RDS/NAT 감사·운영 사용자 액세스키 삭제였다. 인프라 생성·정리는 `b3-1-operator`로 수행했다. [삭제 후 재확인 로그](logs/cleanup-verify.log)에 루트 사용 구간과 액세스키 잔여 0을 구분해 기록했다. 사용자와 커스텀 정책은 과금 없는 증빙용으로 유지했고 Billing 감사 결과는 아직 없다.
+[최소권한 검증 로그](logs/iam-least-privilege.log)에서는 `s3:ListAllMyBuckets`, `rds:DescribeDBInstances`, `iam:ListUsers`가 모두 AccessDenied로 거부됐다. 이는 해당 무관 서비스 작업의 거부를 확인한 근거이며 전체 IAM 권한 평가를 대체하지 않는다. 운영 사용자에게 S3/RDS/IAM 관리·Billing 권한을 추가하지 않았다. 실제 루트 사용 범위는 초기 IAM 사용자·정책 생성과 정리 후 ELB/RDS/NAT 감사·운영 사용자 액세스키 삭제였다. 인프라 생성·정리는 `b3-1-operator`로 수행했다. [삭제 후 재확인 로그](logs/cleanup-verify.log)에 루트 사용 구간과 액세스키 잔여 0을 구분해 기록했다. 사용자와 커스텀 정책은 과금 없는 증빙용으로 유지했다. Billing 화면은 루트로 확인했다.
 
 ## 사전 준비와 실행 방법
 
@@ -145,7 +147,7 @@ export AWS_PROFILE=b3-1-operator
 bash scripts/cleanup.sh
 ```
 
-정리는 완료했다. [logs/cleanup.log](logs/cleanup.log)의 자동 삭제와 [logs/cleanup-verify.log](logs/cleanup-verify.log)의 후속 조회를 함께 근거로 사용했다. EC2는 terminated, 해당 EBS는 0, VPC는 NotFound이며 SG·RT·서브넷·IGW·키페어가 삭제되었다. 실습 액세스키도 삭제하여 남은 수 0을 확인했다. 계정 전체의 RDS `fireview-db`와 EIP `54.116.76.70`은 기존 FireView 리소스로 남겨두었다. Billing 확인은 후속 항목이며 인프라 삭제 완료와 구분한다.
+정리는 완료했다. [logs/cleanup.log](logs/cleanup.log)의 자동 삭제와 [logs/cleanup-verify.log](logs/cleanup-verify.log)의 후속 조회를 함께 근거로 사용했다. EC2는 terminated, 해당 EBS는 0, VPC는 NotFound이며 SG·RT·서브넷·IGW·키페어가 삭제되었다. 실습 액세스키도 삭제하여 남은 수 0을 확인했다. 계정 전체의 RDS `fireview-db`와 EIP `54.116.76.70`은 기존 FireView 리소스로 남겨두었다. Billing 청구서(2026-11-18 10:15 KST)의 예상 총합계는 USD 0.00이며 [요약](screenshots/billing-summary.jpg)·[서비스별](screenshots/billing-services.jpg) 화면을 남겼다. 사용량 반영 지연이 있을 수 있어 다음 날 재확인한다.
 
 ## 외부 접속 검증과 증빙
 
@@ -191,14 +193,14 @@ bash scripts/cleanup.sh
 | 운영 사용자·최소권한 | 운영은 `b3-1-operator`, 커스텀 정책, S3/RDS/IAM 특정 호출 거부 | `infra/iam-policy.json`, `logs/provision.log`, `logs/iam-least-privilege.log` — 확인; 초기 IAM 생성과 정리 후 감사·키 삭제에 루트 사용 |
 | Project 태그 | 생성 스크립트의 각 대상에 `Project=B3-1` 지정 | `scripts/provision.sh` — 설정 근거; 전체 리소스별 태그 조회 원문은 별도 미수집 |
 | 트러블슈팅 | SSH 소스 불일치를 의도적으로 재현하고 복구 | `docs/troubleshooting.md`, `logs/ts-ssh-*.log` — 실제 재현 완료 |
-| 삭제·비용 정리 | 자동 cleanup + EC2/VPC/EBS 재조회·액세스키 삭제 | `logs/cleanup*.log`, `docs/cleanup-checklist.md` — B3-1 인프라 정리 완료; Billing 미완료 |
+| 삭제·비용 정리 | 자동 cleanup + EC2/VPC/EBS 재조회·액세스키 삭제 | `logs/cleanup*.log`, `docs/cleanup-checklist.md` — B3-1 인프라 정리 완료; Billing USD 0.00 확인(`screenshots/billing-*.jpg`) |
 
 ## 대표 과금 요인과 보너스
 
 EC2 실행 시간, EBS gp3 용량·추가 성능, 퍼블릭 IPv4 사용 시간, 인터넷 데이터 전송 등이 대표 과금 요인이다. 자동 퍼블릭 IPv4도 과금 대상이 될 수 있고 EC2 중지 후에도 남은 EBS는 별도 비용이 발생할 수 있다. 실제 단가와 무료 제공 조건은 [EC2 On-Demand](https://aws.amazon.com/ec2/pricing/on-demand/), [EBS](https://aws.amazon.com/ebs/pricing/), [VPC 퍼블릭 IPv4](https://aws.amazon.com/vpc/pricing/)에서 확인한다. 실제 청구 금액은 아직 기록하지 않았다.
 
-Elastic IP, NAT Gateway, ELB, RDS는 이 배포 스크립트에서 생성하지 않는다. 정리 후 B3-1 대상 잔여가 없음을 로그로 확인했으며 기존 FireView의 RDS 1건과 EIP 1건은 유지했다. 계정 전체 리소스 0이나 Billing 확인 완료를 주장하지 않는다. 보너스인 HTTPS/도메인, 로드 밸런서, Auto Scaling, 다중 AZ 구성은 미수행이다.
+Elastic IP, NAT Gateway, ELB, RDS는 이 배포 스크립트에서 생성하지 않는다. 정리 후 B3-1 대상 잔여가 없음을 로그로 확인했으며 기존 FireView의 RDS 1건과 EIP 1건은 유지했다. 계정 전체 리소스 0을 주장하지 않으며, Billing USD 0.00은 무료 플랜 크레딧 충당 결과라 B3-1 사용분만의 금액은 아니다. 보너스인 HTTPS/도메인, 로드 밸런서, Auto Scaling, 다중 AZ 구성은 미수행이다.
 
 ## 문서 자체 점검
 
-실측 IP·리소스 ID·HTTP 응답·SSH 복구와 IAM 거부는 제공된 원문 로그에 근거한다. 미수집된 생성 완료 시각·전체 태그 조회·Billing 결과는 성공으로 채우지 않았다. 삭제 결과는 추가로 받은 두 cleanup 로그에 근거하며, 루트의 후속 감사·키 삭제도 기록했다. 브라우저 이미지에 없는 주소창을 있다고 설명하지 않았고, 파이프라인 `tail`의 종료 코드를 SSH 성공 근거로 사용하지 않았다. 다이어그램은 1800×1180 PNG이며 HTTP·SSH 흐름을 설명한다.
+실측 IP·리소스 ID·HTTP 응답·SSH 복구와 IAM 거부는 제공된 원문 로그에 근거한다. 미수집된 생성 완료 시각·전체 태그 조회는 성공으로 채우지 않았다. 삭제 결과는 추가로 받은 두 cleanup 로그에 근거하며, 루트의 후속 감사·키 삭제도 기록했다. 브라우저 이미지에 없는 주소창을 있다고 설명하지 않았고, 파이프라인 `tail`의 종료 코드를 SSH 성공 근거로 사용하지 않았다. 다이어그램은 1800×1180 PNG이며 HTTP·SSH 흐름을 설명한다.
