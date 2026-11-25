@@ -20,22 +20,22 @@
 
 ## 1. 한눈에 보기
 
-배포는 두 번 했다. 처음에는 IAM 정책 v1으로 배포했고, 정책을 태그 조건으로 강화한 v2로 한 번 더 배포해 검증했다. 두 회차 모두 검증과 정리를 마쳤다.
+| 항목 | 값 |
+| --- | --- |
+| 날짜 | 2026-11-18 (KST = UTC+9) |
+| 실행 주체 | 운영 사용자 `b3-1-operator` (정책 `B3-1-LeastPrivilege`) |
+| EC2 / 퍼블릭 IP | `i-04dd8916b77900977` / `43.201.55.219` |
+| 외부 HTTP 확인 | 03:33:16 UTC (12:33:16 KST) |
+| 정리 재확인 | 03:34:48 UTC (12:34:48 KST) |
+| 근거 | [logs/tagpolicy-run.log](logs/tagpolicy-run.log), [logs/tagpolicy-verify-local.log](logs/tagpolicy-verify-local.log) |
 
-| 회차 | IAM 정책 | EC2 / 당시 퍼블릭 IP | 외부 HTTP 확인 (UTC) | 정리 재확인 (UTC) | 근거 |
-| --- | --- | --- | --- | --- | --- |
-| 최초 배포 | v1 | `i-0d3a2ed22d4d891b1` / `3.35.173.185` | 00:48:31 | 00:53:11 | `logs/provision.log`, `logs/verify-*.log`, `logs/cleanup*.log` |
-| 태그 정책 재검증 | v2 | `i-04dd8916b77900977` / `43.201.55.219` | 03:33:16 | 03:34:48 | `logs/tagpolicy-run.log`, `logs/tagpolicy-verify-local.log` |
-
-날짜는 모두 2026-11-18이다. KST는 UTC+9.
-
-**검증 결과 요약** (두 회차 공통)
+**검증 결과 요약**
 
 - ✅ 외부 `GET /health` → `HTTP/1.1 200 OK`, 본문 `OK`
-- ✅ 외부 `GET /` → `Hello Cloud - B3-1`
+- ✅ 외부 `GET /` → HTTP 200 (`Hello Cloud - B3-1`)
 - ✅ SSH 접속 (내 IP `/32`만 허용)
 - ✅ EC2 내부: nginx active, `localhost` 200, 아웃바운드 `https://example.com` 성공
-- ✅ IAM 최소권한: 관련 없는 S3·RDS·IAM 호출 거부, 다른 프로젝트 리소스 변경 거부
+- ✅ IAM 최소권한: 태그 없는 리소스 생성 거부, 다른 프로젝트 리소스 변경 거부
 - ✅ 정리: EC2 terminated, VPC·키페어 NotFound, 실습 액세스키 삭제
 
 설정값의 기준은 [infra/config.env](infra/config.env)다.
@@ -50,7 +50,7 @@
 ├── .gitignore                    # 상태 파일(.b3-1-state*)과 개인키(*.pem) 제외
 ├── infra/
 │   ├── config.env                # 리전·CIDR·인스턴스 타입 등 공통 설정
-│   ├── iam-policy.json           # 운영 사용자 최소권한 정책 (v2)
+│   ├── iam-policy.json           # 운영 사용자 최소권한 정책
 │   └── user-data.sh              # EC2 첫 부팅 시 Nginx 설치
 ├── scripts/
 │   ├── provision.sh              # 리소스 생성
@@ -60,7 +60,7 @@
 │   ├── architecture.png          # 구성도
 │   ├── diagram/draw_architecture.py  # 구성도 재생성 소스 (Pillow)
 │   ├── troubleshooting.md        # 장애 사례 3건
-│   ├── cleanup-checklist.md      # 회차별 삭제 체크리스트
+│   ├── cleanup-checklist.md      # 삭제 체크리스트
 │   └── project-walkthrough.md    # 동료평가 발표 대본
 ├── logs/                         # 실행 출력 원문 (아래 6장 참고)
 └── screenshots/                  # 실제 콘솔·브라우저 캡처 (아래 6장 참고)
@@ -76,23 +76,23 @@
 
 ![B3-1 아키텍처](docs/architecture.png)
 
-> 그림은 v1 배포의 주소를 넣어 그린 구성도이며 AWS 콘솔 캡처가 아니다. v2도 같은 구조지만 리소스 ID와 IP는 다르다.
+> 구성도는 AWS 콘솔 캡처가 아니라 직접 그린 설명도다. 그림 속 ID와 IP는 이전 배포 때의 값이고, 네트워크 구조는 아래 표와 같다.
 
 ### 구성 요소
 
-| 구성 요소 | 설정 | v1 리소스 ID |
+| 구성 요소 | 설정 | 리소스 ID |
 | --- | --- | --- |
 | 리전 / AZ | `ap-northeast-2` / `ap-northeast-2a` | — |
-| VPC | `b3-1-vpc`, `10.0.0.0/16` | `vpc-017b387de9ebebe39` |
-| 퍼블릭 서브넷 | `b3-1-public-subnet`, `10.0.1.0/24` | `subnet-053424ed40ee5e872` |
-| Internet Gateway | `b3-1-igw` | `igw-0f2ea6a5447a030d1` |
-| Route Table | `b3-1-public-rt`, `0.0.0.0/0 → IGW` | `rtb-062bb6ef39f712a4b` (연결 `rtbassoc-0a575477549135e20`) |
-| Security Group | `b3-1-web-sg`: TCP 80 `0.0.0.0/0`, TCP 22 `121.135.181.35/32` | `sg-0b9bcafca08337847` |
-| EC2 / EBS | Amazon Linux 2023, `t3.micro`, `gp3` 8 GiB | `i-0d3a2ed22d4d891b1` |
-| 키페어 / 퍼블릭 IP | `b3-1-key` / 자동 할당 IPv4 (Elastic IP 미사용) | `3.35.173.185` |
+| VPC | `b3-1-vpc`, `10.0.0.0/16` | `vpc-05713bf5c6a23b20e` |
+| 퍼블릭 서브넷 | `b3-1-public-subnet`, `10.0.1.0/24` | `subnet-0d646fc669d77d6ec` |
+| Internet Gateway | `b3-1-igw` | `igw-064e41dcc91822d1d` |
+| Route Table | `b3-1-public-rt`, `0.0.0.0/0 → IGW` | `rtb-054ffc06245f65109` (연결 `rtbassoc-030e8465681e82542`) |
+| Security Group | `b3-1-web-sg`: TCP 80 `0.0.0.0/0`, TCP 22 `121.135.181.35/32` | `sg-04d2a1f2c07a35329` |
+| EC2 / EBS | Amazon Linux 2023, `t3.micro`, `gp3` 8 GiB | `i-04dd8916b77900977` |
+| 키페어 / 퍼블릭 IP | `b3-1-key` / 자동 할당 IPv4 (Elastic IP 미사용) | `43.201.55.219` |
 | 웹 서버 | Nginx: `/` → `Hello Cloud - B3-1`, `/health` → 200 `OK` | — |
 
-모든 리소스에 `Project=B3-1` 태그를 붙인다. 리소스 ID는 [생성 로그](logs/provision.log), 라우트 active 상태와 SG 규칙은 [AWS 검증 로그](logs/verify-aws.log)에서 확인할 수 있다.
+모든 리소스에 `Project=B3-1` 태그를 붙인다. 리소스 ID는 [logs/tagpolicy-run.log](logs/tagpolicy-run.log) 4절에서 확인할 수 있다.
 
 ### 요청이 서버까지 가는 길
 
@@ -123,14 +123,14 @@ SSH:   내 Mac (121.135.181.35) → Internet Gateway → EC2 → SG (TCP 22, /32
 | IAM | AWS API를 호출할 권한 | 운영 사용자 `b3-1-operator`에 커스텀 정책 `B3-1-LeastPrivilege` 하나만 연결. AdministratorAccess 없음 |
 | SSH 키 | 운영체제 로그인 | `b3-1-key` 개인키로 `ec2-user` 로그인 |
 
-### IAM 정책 v2
+### IAM 정책
 
-[정책 원문](infra/iam-policy.json)은 v2이고, v1과의 차이는 커밋 `a19ea88`의 diff로 볼 수 있다.
+[정책 원문](infra/iam-policy.json)의 핵심은 두 가지다.
 
-- **v1의 문제:** 리전만 맞으면 Project 태그가 없는 다른 EC2도 변경하거나 삭제할 수 있었다.
-- **v2의 해결:** 리소스를 만들 때는 `Project=B3-1` 태그를 반드시 붙여야 하고, 기존 리소스는 이 태그가 있을 때만 변경·삭제할 수 있다.
+- 리소스를 **만들 때**는 `Project=B3-1` 태그를 반드시 붙여야 한다.
+- **이미 있는 리소스**는 `Project=B3-1` 태그가 있을 때만 변경하거나 삭제할 수 있다.
 
-일부 Statement의 Resource가 `*`이어도 무엇이든 허용하는 것은 아니다. 아래 표의 Condition이 함께 걸린다.
+그래서 같은 계정에 있는 다른 프로젝트의 리소스는 건드릴 수 없다. 일부 Statement의 Resource가 `*`이어도 무엇이든 허용하는 것은 아니다. 아래 표의 Condition이 함께 걸린다.
 
 | 작업 | 허용 조건 | Statement (Sid) |
 | --- | --- | --- |
@@ -143,7 +143,7 @@ SSH:   내 Mac (121.135.181.35) → Internet Gateway → EC2 → SG (TCP 22, /32
 | AMI 조회·진단 | 서울 AL2023 공개 SSM 파라미터 조회, `sts:GetCallerIdentity`, `DecodeAuthorizationMessage` | `ReadAmiParameter`, `DecodeAuthErrorsForTroubleshooting` |
 | 그 밖의 서비스 | S3·RDS·IAM 관리·Billing 권한은 없음 | — |
 
-### v2 권한 검증 (dry-run)
+### 권한 검증 (dry-run)
 
 [logs/tagpolicy-run.log](logs/tagpolicy-run.log) 1·5절에서 발췌했다. 비교 대상은 다음 두 인스턴스다.
 
@@ -165,14 +165,14 @@ reboot FireView                        => UnauthorizedOperation   (거부)
 - FireView는 실제로 중지·종료하거나 태그를 바꾸지 않았고, 정리 후에도 running 상태임을 확인했다.
 - 캡처: [배포 전 dry-run](screenshots/tagpolicy-dryrun.jpg), [서비스 검증·리소스 비교](screenshots/tagpolicy-verify-compare.jpg)
 
-v1 배포 때 관련 없는 서비스의 호출이 거부된 기록은 [logs/iam-least-privilege.log](logs/iam-least-privilege.log)에 있다. 거부된 호출은 S3 ListBuckets, RDS DescribeDBInstances, IAM ListUsers다.
+관련 없는 서비스(S3 ListBuckets, RDS DescribeDBInstances, IAM ListUsers)를 호출하면 거부되는 기록은 [logs/iam-least-privilege.log](logs/iam-least-privilege.log)에 있다. 이 로그는 이전 배포 때 남긴 것이다.
 
 ### 루트 계정 사용 범위
 
 | 수행 주체 | 한 일 |
 | --- | --- |
 | 운영 사용자 `b3-1-operator` | 인프라 생성·검증·정리 |
-| 루트 | IAM 사용자·정책 생성, v2 정책 적용, 액세스키 삭제, 계정 단위 사후 점검, Billing 조회 |
+| 루트 | IAM 사용자·정책 생성, 정책 적용, 액세스키 삭제, 계정 단위 사후 점검, Billing 조회 |
 
 모든 단계에서 루트를 쓰지 않았다고 말할 수는 없다. IAM 사용자와 정책은 증빙용으로 남겨 두었고, 실습에 쓴 액세스키는 삭제했다.
 
@@ -204,7 +204,7 @@ curl -4 -fsS https://checkip.amazonaws.com                 # 내 공인 IP 확�
 
 - 개인키 `~/.ssh/b3-1-key.pem`은 Mac에만 둔다.
 - 공개키 `~/.ssh/b3-1-key.pem.pub`만 CloudShell의 `~/b3-1-key.pub`로 올린다.
-- ⚠️ 공개키를 `/tmp`에 두면 안 된다. CloudShell 세션이 다시 시작되면 사라진다. v2 1차 배포가 이 때문에 중단됐다. 자세한 내용은 [트러블슈팅 사례 3](docs/troubleshooting.md)에 있다.
+- ⚠️ 공개키를 `/tmp`에 두면 안 된다. CloudShell 세션이 다시 시작되면 사라진다. 실제로 첫 시도가 이 때문에 중단됐다. 자세한 내용은 [트러블슈팅 사례 3](docs/troubleshooting.md)에 있다.
 
 ### 2. CloudShell에서 생성과 AWS 검증
 
@@ -254,60 +254,46 @@ bash scripts/cleanup.sh      # 상태 파일이 있는 CloudShell 저장소 루�
 
 외부 접속 검증은 **(B) `GET /health`** 방식을 주로 쓰고, **(A) 브라우저 확인**을 보조로 썼다.
 
-### v1 상세 기록
-
 | 항목 | 기록 |
 | --- | --- |
 | 계정 / 실행 주체 | `508473919970` / `arn:aws:iam::508473919970:user/b3-1-operator` |
-| EC2 / 퍼블릭 IP | `i-0d3a2ed22d4d891b1` / `3.35.173.185` |
+| EC2 / 퍼블릭 IP | `i-04dd8916b77900977` / `43.201.55.219` |
 | SSH 허용 소스 | Mac 공인 IP `121.135.181.35/32` |
-| `/health` 응답 | `HTTP/1.1 200 OK`, 본문 `OK` |
-| 응답 시각 | Mac 00:48:31 UTC, CloudShell 00:48:47 UTC |
-| 브라우저 | `http://3.35.173.185/`에서 `Hello Cloud - B3-1` 확인 |
-| 내부 검사 | SSH, nginx active, localhost 200, example.com 모두 PASS |
+| CloudShell 검증 | RT `0.0.0.0/0 → igw-064e41dcc91822d1d`, 전체 포트 허용 없음, SSH `/32`, `/health`·`/` 모두 PASS |
+| Mac 검증 (03:33:16 UTC) | `/health` → `HTTP/1.1 200 OK` 본문 `OK`, `/` 200, SSH, nginx active, localhost 200, example.com 모두 PASS |
 
-v2 결과(03:33:16 UTC, 모두 PASS)는 [logs/tagpolicy-verify-local.log](logs/tagpolicy-verify-local.log)에 있다. 생성 완료 시각은 provision 로그에 남지 않아 적지 않았다.
+생성 완료 시각은 provision 출력에 남지 않아 적지 않았다.
 
 ### 증빙 파일 목록
-
-별도 표시가 없으면 v1 기록이다.
 
 **생성과 검증**
 
 | 파일 | 내용 |
 | --- | --- |
-| [logs/provision.log](logs/provision.log) | 생성 단계, 호출 ARN, 리소스 ID, SSH 소스, 퍼블릭 IP |
-| [logs/verify-aws.log](logs/verify-aws.log) | CloudShell: RT active, SG 80/22 규칙, 외부 HTTP 200 (SSH는 건너뜀) |
-| [screenshots/verify-aws-cloudshell.jpg](screenshots/verify-aws-cloudshell.jpg) | 위 검증의 CloudShell 화면 (**외부 접속 주 증빙**) |
-| [logs/verify-local.log](logs/verify-local.log) | Mac: 외부 HTTP, SSH, nginx, localhost, 아웃바운드 PASS (AWS 검사는 건너뜀) |
-| [screenshots/browser-root.jpg](screenshots/browser-root.jpg) | 루트 페이지 문구 (주소창 없음, 보조 증빙) |
-| [screenshots/browser-health.jpg](screenshots/browser-health.jpg) | `/health`의 `OK` (주소창 없음, 보조 증빙) |
+| [logs/tagpolicy-run.log](logs/tagpolicy-run.log) | 정책 적용, dry-run, 생성(리소스 ID), CloudShell 검증, 정리, 루트 재확인 |
+| [logs/tagpolicy-verify-local.log](logs/tagpolicy-verify-local.log) | Mac 외부 HTTP 200, SSH·nginx·localhost·아웃바운드 PASS |
+| [screenshots/tagpolicy-dryrun.jpg](screenshots/tagpolicy-dryrun.jpg) | 배포 전 dry-run: FireView 변경·태그 추가 거부, 생성 태그 조건 비교 |
+| [screenshots/tagpolicy-verify-compare.jpg](screenshots/tagpolicy-verify-compare.jpg) | 서비스 검증, B3-1 허용 / FireView 거부 비교 |
 
-**권한과 트러블슈팅**
+**보조 증빙 (이전 배포 당시 기록)**
+
+같은 스크립트와 같은 구성으로 먼저 배포했을 때 남긴 것이다. 리소스 ID와 IP는 위 표와 다르다.
 
 | 파일 | 내용 |
 | --- | --- |
+| [screenshots/verify-aws-cloudshell.jpg](screenshots/verify-aws-cloudshell.jpg), [logs/verify-aws.log](logs/verify-aws.log) | CloudShell의 RT·SG 표와 외부 HTTP 200 PASS 화면 |
+| [screenshots/browser-root.jpg](screenshots/browser-root.jpg) | 브라우저 루트 페이지 `Hello Cloud - B3-1` (주소창 없음) |
+| [screenshots/browser-health.jpg](screenshots/browser-health.jpg) | 브라우저 `/health`의 `OK` (주소창 없음) |
 | [logs/iam-least-privilege.log](logs/iam-least-privilege.log) | S3·RDS·IAM 호출 AccessDenied |
 | [logs/ts-ssh-break.log](logs/ts-ssh-break.log) → [symptom](logs/ts-ssh-symptom.log) → [fix](logs/ts-ssh-fix.log) → [result](logs/ts-ssh-result.log) | SSH 소스 IP를 일부러 틀리게 바꿔 장애를 재현하고 복구한 과정 |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 사례 3건: HTTP 타임아웃(예상 시나리오), SSH 타임아웃(실제 재현), 공개키 소실(v2 실제 사례) |
 
-**v2 태그 정책 재검증**
+**트러블슈팅과 정리**
 
 | 파일 | 내용 |
 | --- | --- |
-| [logs/tagpolicy-run.log](logs/tagpolicy-run.log) | v2 적용, dry-run, 공개키 소실과 1차 잔여 정리, 재배포·검증·최종 정리, 루트 재확인 |
-| [logs/tagpolicy-verify-local.log](logs/tagpolicy-verify-local.log) | Mac 외부 HTTP 200, SSH·nginx·localhost·아웃바운드 PASS |
-| [screenshots/tagpolicy-dryrun.jpg](screenshots/tagpolicy-dryrun.jpg) | FireView 변경·태그 추가 거부, 생성 시 태그 조건 비교 |
-| [screenshots/tagpolicy-verify-compare.jpg](screenshots/tagpolicy-verify-compare.jpg) | 서비스 검증, B3-1 허용 / FireView 거부 비교 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 사례 3건: HTTP 타임아웃(예상 시나리오), SSH 타임아웃(실제 재현), 공개키 소실(실제 사례) |
 | [screenshots/tagpolicy-cleanup.jpg](screenshots/tagpolicy-cleanup.jpg) | 삭제 후 EC2 terminated, VPC·키페어 NotFound, FireView running |
-
-**정리와 비용**
-
-| 파일 | 내용 |
-| --- | --- |
-| [logs/cleanup.log](logs/cleanup.log), [logs/cleanup-verify.log](logs/cleanup-verify.log) | 자동 삭제와 삭제 후 재조회 |
-| [screenshots/cleanup-cloudshell.jpg](screenshots/cleanup-cloudshell.jpg) | CloudShell 정리 출력 |
-| [docs/cleanup-checklist.md](docs/cleanup-checklist.md) | 회차별 삭제 체크리스트 |
+| [docs/cleanup-checklist.md](docs/cleanup-checklist.md) | 삭제 체크리스트 |
 | [screenshots/billing-summary.jpg](screenshots/billing-summary.jpg), [screenshots/billing-services.jpg](screenshots/billing-services.jpg) | 청구서 요약과 서비스별 화면 |
 
 ---
@@ -316,10 +302,11 @@ v2 결과(03:33:16 UTC, 모두 PASS)는 [logs/tagpolicy-verify-local.log](logs/t
 
 ### 정리 결과
 
-| 회차 | 결과 | 근거 |
-| --- | --- | --- |
-| v1 | EC2 terminated, EBS 0, VPC NotFound. SG·RT·서브넷·IGW·키페어 삭제. 액세스키 0 | `logs/cleanup.log`, `logs/cleanup-verify.log` |
-| v2 | 03:34:48 UTC 재조회: EC2 terminated, VPC·키페어 NotFound. 루트로 액세스키 삭제 후 0 | `logs/tagpolicy-run.log` 6절, `screenshots/tagpolicy-cleanup.jpg` |
+[logs/tagpolicy-run.log](logs/tagpolicy-run.log) 6절과 [정리 캡처](screenshots/tagpolicy-cleanup.jpg)가 근거다.
+
+- `cleanup.sh`가 EC2 → SG → RT → 서브넷 → IGW → VPC → 키페어 순으로 모두 삭제했고, `Project=B3-1` 잔여 조회는 전 항목이 비어 있었다.
+- 03:34:48 UTC 재조회: EC2 terminated, VPC `InvalidVpcID.NotFound`, 키페어 `InvalidKeyPair.NotFound`.
+- 루트로 실습 액세스키를 삭제했고, 남은 키는 0개다.
 
 같은 계정에 있는 FireView 프로젝트의 RDS `fireview-db`와 EIP `54.116.76.70`은 B3-1과 관계없는 기존 리소스라 그대로 두었다. 계정 전체 리소스가 0개라는 뜻은 아니다.
 
@@ -333,7 +320,7 @@ v2 결과(03:33:16 UTC, 모두 PASS)는 [logs/tagpolicy-verify-local.log](logs/t
 
 - 2026-11-18 10:15 KST 청구서의 예상 총합계는 **USD 0.00**이다.
 - 이 금액은 무료 플랜 크레딧으로 충당된 결과이므로, B3-1 사용분만 따로 계산한 금액이 아니다.
-- 이 캡처는 v1 정리 후에 찍었기 때문에 v2 사용분은 반영되지 않았다. 사용량은 늦게 반영될 수 있어 다음 날 다시 확인해야 한다.
+- 이 캡처는 위 배포(12:33 KST 검증)보다 먼저 찍었기 때문에 그 사용분은 반영되지 않았다.
 
 ---
 
@@ -341,16 +328,16 @@ v2 결과(03:33:16 UTC, 모두 PASS)는 [logs/tagpolicy-verify-local.log](logs/t
 
 | 요구사항 | 충족 방법 | 근거 |
 | --- | --- | --- |
-| ✅ 서울 리전·AZ, VPC·서브넷 | 서울 `2a`, `10.0.0.0/16`, `10.0.1.0/24` | `infra/config.env`, `scripts/provision.sh`, `logs/provision.log` |
-| ✅ IGW·RT·퍼블릭 IP | IGW로 가는 기본 경로 active, 자동 퍼블릭 IP로 외부 응답 | `logs/provision.log`, `logs/verify-aws.log` |
-| ✅ SG 제한 | TCP 80 전체, TCP 22 `/32`, 전체 포트 허용 규칙 없음 | `logs/verify-aws.log`, `screenshots/verify-aws-cloudshell.jpg` |
-| ✅ EC2·EBS·키 | AL2023, t3.micro, gp3 8 GiB, ed25519 공개키 등록 | `logs/provision.log`, `logs/verify-local.log` |
-| ✅ Nginx 서비스 | 루트 문구, `/health` 200, nginx active, localhost 200 | 브라우저 캡처, 검증 로그 |
+| ✅ 서울 리전·AZ, VPC·서브넷 | 서울 `2a`, `10.0.0.0/16`, `10.0.1.0/24` | `infra/config.env`, `scripts/provision.sh`, `logs/tagpolicy-run.log` |
+| ✅ IGW·RT·퍼블릭 IP | IGW로 가는 기본 경로, 자동 퍼블릭 IP로 외부 응답 | `logs/tagpolicy-run.log` 4·5절 |
+| ✅ SG 제한 | TCP 80 전체, TCP 22 `/32`, 전체 포트 허용 규칙 없음 | `logs/tagpolicy-run.log` 5절 |
+| ✅ EC2·EBS·키 | AL2023, t3.micro, gp3 8 GiB, ed25519 공개키 등록 | `scripts/provision.sh`, `logs/tagpolicy-verify-local.log` |
+| ✅ Nginx 서비스 | `/` 200, `/health` 200 `OK`, nginx active, localhost 200 | `logs/tagpolicy-verify-local.log`, 브라우저 캡처 |
 | ✅ 외부 검증 (B) + 보조 (A) | CloudShell·Mac의 HTTP 확인 + 브라우저 본문 확인 | 6장 증빙 목록 (브라우저 캡처에는 주소창 없음) |
 | ✅ 운영 사용자·최소권한 | 생성 시 태그 필수, 기존 리소스는 태그 조건, 따로 태그 붙이기 거부 | `infra/iam-policy.json`, `logs/tagpolicy-run.log` |
 | ✅ Project 태그 | 태그 없는 VPC 생성 거부, 태그 있는 생성 허용 | `logs/tagpolicy-run.log` 1·5절 |
-| ✅ 트러블슈팅 | SSH 소스 불일치 복구(v1), 공개키 소실 진단(v2) | `docs/troubleshooting.md`, `logs/ts-ssh-*.log` |
-| ✅ 삭제·비용 정리 | 두 회차 모두 자동 정리, 재조회, 액세스키 삭제 | `logs/cleanup*.log`, `logs/tagpolicy-run.log`, `docs/cleanup-checklist.md` |
+| ✅ 트러블슈팅 | 공개키 소실 진단, SSH 소스 불일치 재현·복구 | `docs/troubleshooting.md`, `logs/ts-ssh-*.log` |
+| ✅ 삭제·비용 정리 | 자동 정리, 재조회, 액세스키 삭제 | `logs/tagpolicy-run.log` 6절, `docs/cleanup-checklist.md` |
 
 ---
 
@@ -367,6 +354,6 @@ v2 결과(03:33:16 UTC, 모두 PASS)는 [logs/tagpolicy-verify-local.log](logs/t
 - 생성 완료 시각과 리소스별 전체 태그 조회 결과는 수집하지 않았다. 없는 결과를 성공으로 채우지 않았다.
 - 트러블슈팅 사례 3의 권한 오류 메시지는 decode하지 않았다.
 - 브라우저 캡처에는 주소창이 없어서 보조 증빙으로만 썼다.
-- v2 이후 Billing은 다시 캡처하지 않았다.
+- 이번 배포 이후의 Billing은 다시 캡처하지 않았다.
 
 **보너스 미수행:** HTTPS·도메인, 로드 밸런서, Auto Scaling, 다중 AZ
